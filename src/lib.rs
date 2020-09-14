@@ -15,7 +15,7 @@
 //! [MIT](https://choosealicense.com/licenses/mit/)
 
 //std libraries
-use std::{fmt, convert};
+use std::fmt;
 
 // external libraries
 use chrono::naive::NaiveDate;
@@ -24,7 +24,7 @@ use chrono::naive::NaiveDate;
 pub struct Defid(u64);
 
 impl Defid {
-    pub fn as_u64(&self) -> u64 {
+    pub fn as_u64(self) -> u64 {
         self.0
     }
 }
@@ -49,6 +49,8 @@ impl PartialEq for Definition {
         self.defid == other.defid
     }
 }
+
+impl Eq for Definition {}
 
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -92,22 +94,22 @@ impl Definition {
     }
 
     /// The word the entry is defining
-    pub fn word(&self) -> &String {
+    pub fn word(&self) -> &str {
         &self.word
     }
 
     /// The body of the definition
-    pub fn definition(&self) -> &String {
+    pub fn definition(&self) -> &str {
         &self.definition
     }
 
     /// An example of the use of the word
-    pub fn example(&self) -> &String {
+    pub fn example(&self) -> &str {
         &self.example
     }
 
     /// The author of the Definition entry
-    pub fn author(&self) -> &String {
+    pub fn author(&self) -> &str {
         &self.author
     }
 
@@ -132,7 +134,7 @@ impl Definition {
     }
 
     /// A permalink to the entry
-    pub fn permalink(&self) -> &String {
+    pub fn permalink(&self) -> &str {
         &self.permalink
     }
 
@@ -145,17 +147,14 @@ impl Definition {
 // API Functions
 
 /// Get a list of definitions trough a reqwest client by word.
-pub async fn define(client: &reqwest::Client, word: &str) -> Result<Vec<Definition>, UrbanError> {
-    let response = client.get(&format!("https://api.urbandictionary.com/v0/define?term={}", word))
+pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Vec<Definition>, UrbanError> {
+    let response: serde_json::Value = client.get(&format!("https://api.urbandictionary.com/v0/define?term={}", word))
         .send()
         .await?
-        .text()
+        .json()
         .await?;
 
-    //json list of all the definitions.
-    let json_definitions: serde_json::Value = serde_json::from_str::<serde_json::Value>(&response)?;
-
-    Ok(json_definitions.get("list")
+    Ok(response.get("list")
         .ok_or_else(|| UrbanError::InvalidStateError)?
         .as_array()
         .ok_or_else(|| UrbanError::InvalidStateError)?
@@ -169,7 +168,7 @@ pub async fn define(client: &reqwest::Client, word: &str) -> Result<Vec<Definiti
 
 /// Errors for the library.
 ///
-/// There are many different types of errors that can arrise when calling for definitions. Like a
+/// There are many different types of errors that can arise when calling for definitions. Like a
 /// reqwest error in case it can't access the online API, or a serde_json error when there's an
 /// error in json parsing.
 ///
@@ -177,21 +176,9 @@ pub async fn define(client: &reqwest::Client, word: &str) -> Result<Vec<Definiti
 #[derive(thiserror::Error, Debug)]
 pub enum UrbanError {
     #[error("reqwest error: {0:?}")]
-    ReqwestError(reqwest::Error),
+    ReqwestError(#[from] reqwest::Error),
     #[error("serde_json error: {0:?}")]
-    SerdeError(serde_json::Error),
+    SerdeError(#[from] serde_json::Error),
     #[error("Invalid state")]
     InvalidStateError
-}
-
-impl convert::From<reqwest::Error> for UrbanError {
-    fn from(error: reqwest::Error) -> Self {
-        UrbanError::ReqwestError(error)
-    }
-}
-
-impl convert::From<serde_json::Error> for UrbanError {
-    fn from(error: serde_json::Error) -> Self {
-        UrbanError::SerdeError(error)
-    }
 }
