@@ -15,13 +15,21 @@
 //! [MIT](https://choosealicense.com/licenses/mit/)
 
 //std libraries
-use std::fmt;
+use std::{fmt, convert};
 
 // external libraries
 use chrono::naive::NaiveDate;
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Defid(u64);
+
+impl Defid {
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
 /// The struct to represent an Urban definition entry.
-///
 #[derive(Debug, Clone)]
 pub struct Definition {
     word: String,
@@ -29,7 +37,7 @@ pub struct Definition {
     example: String,
     author: String,
     written_on: NaiveDate,
-    defid: String,
+    defid: Defid,
     thumbs_up: u32,
     thumbs_down: u32,
     permalink: String,
@@ -50,6 +58,39 @@ impl fmt::Display for Definition {
 
 /// Getter methods for a Definition
 impl Definition {
+    fn new(json_definition: &serde_json::Value) -> Option<Definition> {
+
+        let word = json_definition["word"].as_str()?.to_string();
+        let definition = json_definition["definition"].as_str()?.to_string();
+        let example = json_definition["example"].as_str()?.to_string();
+        let author = json_definition["author"].as_str()?.to_string();
+        let parsed_date_str = json_definition["written_on"].as_str()?;
+        let written_on = NaiveDate::parse_from_str(
+            parsed_date_str,
+            "%Y-%m-%dT%H:%M:%S%.3fZ"
+        ).ok()?;
+        let defid = Defid(json_definition["defid"].as_u64()?);
+        let thumbs_up = json_definition["thumbs_up"].as_u64()? as u32;
+        let thumbs_down = json_definition["thumbs_down"].as_u64()? as u32;
+        let permalink = json_definition["permalink"].as_str()?.to_string();
+        let sound_urls = json_definition["sound_urls"].as_array()?
+            .iter().filter_map(|j_url| j_url.as_str())
+            .map(|s_url| s_url.to_string()).collect();
+
+        Some(Definition {
+            word,
+            definition,
+            example,
+            author,
+            written_on,
+            defid,
+            thumbs_up,
+            thumbs_down,
+            permalink,
+            sound_urls,
+        })
+    }
+
     /// The word the entry is defining
     pub fn word(&self) -> &String {
         &self.word
@@ -76,8 +117,8 @@ impl Definition {
     }
 
     /// The id of the definition
-    pub fn defid(&self) -> &String {
-        &self.defid
+    pub fn defid(&self) -> Defid {
+        self.defid
     }
 
     /// The number of thumbs up the entry has
@@ -98,5 +139,59 @@ impl Definition {
     /// A list of urls to sounds of the entry
     pub fn sound_urls(&self) -> &Vec<String> {
         &self.sound_urls
+    }
+}
+
+// API Functions
+
+/// Get a list of definitions trough a reqwest client by word.
+pub async fn define(client: &reqwest::Client, word: &str) -> Result<Vec<Definition>, UrbanError> {
+    let response = client.get(&format!("https://api.urbandictionary.com/v0/define?term={}", word))
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    //json list of all the definitions.
+    let json_definitions: serde_json::Value = serde_json::from_str::<serde_json::Value>(&response)?;
+
+    Ok(json_definitions.get("list")
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .as_array()
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .iter()
+        .filter_map(|def| Definition::new(def))
+        .collect())
+}
+
+
+// Errors
+
+/// Errors for the library.
+///
+/// There are many different types of errors that can arrise when calling for definitions. Like a
+/// reqwest error in case it can't access the online API, or a serde_json error when there's an
+/// error in json parsing.
+///
+/// For this reason all the different possible errors are encapsulated under the `UrbanError` enum.
+#[derive(thiserror::Error, Debug)]
+pub enum UrbanError {
+    #[error("reqwest error: {0:?}")]
+    ReqwestError(reqwest::Error),
+    #[error("serde_json error: {0:?}")]
+    SerdeError(serde_json::Error),
+    #[error("Invalid state")]
+    InvalidStateError
+}
+
+impl convert::From<reqwest::Error> for UrbanError {
+    fn from(error: reqwest::Error) -> Self {
+        UrbanError::ReqwestError(error)
+    }
+}
+
+impl convert::From<serde_json::Error> for UrbanError {
+    fn from(error: serde_json::Error) -> Self {
+        UrbanError::SerdeError(error)
     }
 }
