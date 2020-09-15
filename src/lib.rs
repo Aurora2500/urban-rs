@@ -20,16 +20,26 @@ use std::fmt;
 // external libraries
 use chrono::naive::NaiveDate;
 
+/// A wrapper for the id of a definition entry.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Defid(u64);
 
 impl Defid {
+    /// defid constructor from u64
+    pub fn new(id: u64) -> Defid {
+        Defid(id)
+    }
+
+    /// Getter method to unwrap the u64 from a Defid.
     pub fn as_u64(self) -> u64 {
         self.0
     }
 }
 
 /// The struct to represent an Urban definition entry.
+///
+/// ## Example
+///
 #[derive(Debug, Clone)]
 pub struct Definition {
     word: String,
@@ -163,6 +173,39 @@ pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Ve
         .collect())
 }
 
+/// Get a definition trough a reqwest client by Defid.
+pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Option<Definition>, UrbanError> {
+    let response: serde_json::Value = client.get(&format!("https://api.urbandictionary.com/v0/define?defid={}", defid.0))
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response.get("list")
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .as_array()
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .iter()
+        .filter_map(|def| Definition::new(def))
+        .next())
+}
+/// Fetch a list of random definitions trough a reqwest client.
+pub async fn fetch_random(client: &reqwest::Client) -> Result<Vec<Definition>, UrbanError> {
+    let response: serde_json::Value = client.get("https://api.urbandictionary.com/v0/random")
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response.get("list")
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .as_array()
+        .ok_or_else(|| UrbanError::InvalidStateError)?
+        .iter()
+        .filter_map(|def| Definition::new(def))
+        .collect())
+}
+
 
 // Errors
 
@@ -175,10 +218,19 @@ pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Ve
 /// For this reason all the different possible errors are encapsulated under the `UrbanError` enum.
 #[derive(thiserror::Error, Debug)]
 pub enum UrbanError {
+    /// Most likely produced when failing to fetch content from the internet.
     #[error("reqwest error: {0:?}")]
     ReqwestError(#[from] reqwest::Error),
+
+    /// It would be produced when serde fails.
     #[error("serde_json error: {0:?}")]
     SerdeError(#[from] serde_json::Error),
+
+    /// Error produced when the Json recieved from Urban's API has an unexpected structure.
+    ///
+    /// If a function returns this error. It means that it has correctly been able to fetch and
+    /// recieve the Json from Urban's API. But it has not the expected structure containing the
+    /// definitions.
     #[error("Invalid state")]
     InvalidStateError
 }
