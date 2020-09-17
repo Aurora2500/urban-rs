@@ -312,7 +312,7 @@ pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Ve
         .collect()
 }
 
-/// Get a definition trough a reqwest client by Defid.
+/// Get a definition trough a reqwest client by Defid, or None if the Defid is invalid.
 ///
 /// ## Example
 /// ```rust
