@@ -1,18 +1,100 @@
-//! # urban-rs: API for Urban Dictionary
-//!
-//! An API to interact with Urban Dictionary to get definitions from it.
-//!
-//! There are three ways to get a definition:
-//!
-//! * by word
-//! * by id
-//! * random
-//!
-//! ## Examples
-//!
-//!
-//! ## License
-//! [MIT](https://choosealicense.com/licenses/mit/)
+/// # urban-rs: API for Urban Dictionary
+///
+/// An async API to interact with Urban Dictionary to get definitions from it.
+///
+/// The API Uses reqwest for fetching definitions off of the internet
+///
+/// There are three ways to get a definition:
+///
+/// * by word
+/// * by id
+/// * randomly
+///
+/// ## Example
+/// ```rust
+/// use std::io;
+///
+/// use tokio::runtime::Runtime;
+///
+/// println!("What word do you want defined?");
+/// let mut word = String::new();
+/// io::stdin()
+///     .read_line(&mut word)
+///     .expect("Failed to read line");
+///
+/// // A reqwest client is needed to use the urban API
+/// let client = reqwest::Client::new();
+///
+/// // The function is async. Thus it needs an executor to be ran from inside a non-async
+/// // function.
+/// if let Ok(result) = Runtime::new()
+///     .expect("Failed to create tokio runtime")
+///     .block_on(urban_rs::fetch_definition(&client, &word))
+/// {
+///
+///     // the result is a vector of definitions. If it has no length then there were no words
+///     // found
+///     if result.is_empty() {
+///         println!("No words were found");
+///         return;
+///     }
+///
+///     let first_result = &result[0];
+///     println!("Definition for {}:\n{}", first_result.word(), first_result.definition());
+///
+/// } else {
+///     println!("An error has occured while fetching the definition");
+/// }
+/// ```
+/// This example asks a user for a word and prints out its definition
+///
+/// ## Guide
+/// To start using urban-rs. Add it to your cargo.toml
+///
+/// ```toml
+/// urban-rs = "0.1.0"
+/// ```
+/// Urban-rs uses `reqwest` to fetch definitions trough the internet asynchronously.
+///
+/// This means that you will need to use a `reqwest::Client` to give to the functions.
+/// The reasons for the user to provide a client is so that it can be reused across multiple function calls.
+/// Or even across different APIs that all need a reqwest client.
+///
+/// Aditionally, since the functions are asynchronous, they won't directly return a result.
+/// But instead will return a Future that needs to be executed.
+/// Using `futures`'s executors won't work. As reqwest requires tokios runtime to be executed.
+/// Thus the futures returned from the functions need to be called trough `tokio`'s `Runtime` and its executors.
+///
+/// ```rust
+/// use tokio::runtime::Runtime;
+///
+/// // A reqwest client is needed so that the Urban API can make web API calls
+/// let client = reqwest::Client::new();
+///
+/// // As stated before. The API uses async functions which return futures. These need to be executed trough
+/// // tokio's Runtime.
+/// if let Ok(result) = Runtime::new()
+///     .expect("Failed to create tokio runtime")
+///     .block_on(urban_rs::fetch_random(&client))
+/// {
+///
+///     // the result is a vector of definitions. If it has no length then there were no words
+///     // found
+///     if result.is_empty() {
+///         println!("No words were found");
+///         return;
+///     }
+///
+///     let first_result = &result[0];
+///     println!("Definition of the day: {}!\n{}", first_result.word(), first_result.definition());
+///
+/// } else {
+///     println!("An error has occured while fetching the definition");
+/// }
+/// ```
+///
+/// ## License
+/// [MIT](https://choosealicense.com/licenses/mit/)
 
 //std libraries
 use std::fmt;
@@ -206,10 +288,10 @@ impl Definition {
 /// This error occurs when reqwest fails to fetch from the Urban API.
 ///
 /// ### SerdeError
-/// This error occurs when the json recieved is invalid.
+/// This error occurs when the json received is invalid.
 ///
 /// ### UnknownJsonError
-/// This error occurs when the json recieved is valid but does not have the expected structure.
+/// This error occurs when the json received is valid but does not have the expected structure.
 ///
 /// ### Empty result
 /// There is a fourth case. In which there are no entries in Urban Dictionary for the looked up
@@ -240,7 +322,6 @@ pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Op
         .json()
         .await?;
 
-
     response.get("list")
         .ok_or_else(|| UrbanError::UnknownJsonError)?
         .as_array()
@@ -253,8 +334,6 @@ pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Op
 ///
 /// ## Example
 /// ```rust
-/// use std::io;
-///
 /// use tokio::runtime::Runtime;
 ///
 /// // A reqwest client is needed to use the urban API
@@ -281,6 +360,27 @@ pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Op
 ///     println!("An error has occured while fetching the definition");
 /// }
 /// ```
+/// This example prints a random word and its definition.
+///
+/// ## Errors
+/// The error type of the result is UrbanError. Which is an enum of three types.
+/// * ReqwestError
+/// * SerdeError
+/// * UnknownJsonError
+///
+/// ### ReqwestError
+/// This error occurs when reqwest fails to fetch from the Urban API.
+///
+/// ### SerdeError
+/// This error occurs when the json received is invalid.
+///
+/// ### UnknownJsonError
+/// This error occurs when the json received is valid but does not have the expected structure.
+///
+/// ### Empty result
+/// There is the case in which the vector returned is empty. In theory it would always be populated
+/// as there is no reason for Urban to not find any definitions to return. But you should always be
+/// safe with fetches trough the internet and check that the vector is not empty.
 pub async fn fetch_random(client: &reqwest::Client) -> Result<Vec<Definition>, UrbanError> {
     let response: serde_json::Value = client.get("https://api.urbandictionary.com/v0/random")
         .send()
@@ -309,19 +409,18 @@ pub async fn fetch_random(client: &reqwest::Client) -> Result<Vec<Definition>, U
 /// For this reason all the different possible errors are encapsulated under the `UrbanError` enum.
 #[derive(thiserror::Error, Debug)]
 pub enum UrbanError {
-    /// Most likely produced when failing to fetch content from the internet.
+    /// Produced when reqwest fails.
     #[error("reqwest error: {0:?}")]
     ReqwestError(#[from] reqwest::Error),
 
-    /// It would be produced when serde fails.
+    /// Produced when serde fails.
     #[error("serde_json error: {0:?}")]
     SerdeError(#[from] serde_json::Error),
 
-    /// Error produced when the Json recieved from Urban's API has an unexpected structure.
+    /// Error produced when the Json received from Urban's API has an unexpected structure.
     ///
     /// If a function returns this error. It means that it has correctly been able to fetch and
-    /// recieve the Json from Urban's API. But it has not the expected structure containing the
-    /// definitions.
+    /// recieve the Json from Urban's API. But it doesn't have the expected structure of a definition.
     #[error("Valid json has unkown structure")]
     UnknownJsonError
 }
