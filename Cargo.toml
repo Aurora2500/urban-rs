@@ -7,7 +7,7 @@ description = "An API library to interract with Urban Dictionary."
 license = "MIT"
 repository= "https://github.com/Aurora2500/urban-rs"
 readme = "README.md"
-keywords = ["API", "Urban", "Urban Dictionary"]
+keywords = ["API", "Urban"]
 categories = ["api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
