@@ -296,8 +296,6 @@ impl Definition {
 /// ### Empty result
 /// There is a fourth case. In which there are no entries in Urban Dictionary for the looked up
 /// word. In which case the Vector returned will be empty.
-///
-/// ##
 pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Vec<Definition>, UrbanError> {
     let response: serde_json::Value = client.get(&format!("https://api.urbandictionary.com/v0/define?term={}", word))
         .send()
@@ -315,6 +313,49 @@ pub async fn fetch_definition(client: &reqwest::Client, word: &str) -> Result<Ve
 }
 
 /// Get a definition trough a reqwest client by Defid.
+///
+/// ## Example
+/// ```rust
+/// tokio::runtime::Runtime;
+/// // client and tokio runtime are needed to fetch the definitions
+/// let client = reqwest::Client::new();
+/// let mut rt = Runtime::new().expect("Failed to create runtime");
+///
+/// // for the purpose of the example we first get some random definitions and focus on the first
+/// // some random definitions and focus on the first one.
+/// let randoms = rt.block_on(urban_rs::fetch_random(&client)).unwrap();
+/// let first = &randoms[0];
+///
+/// // Using the defid of the first entry we got. We can fetch the exact same entry later on.
+/// let copy = rt.block_on(urban_rs::fetch_by_defid(&client, first.defid())).unwrap().unwrap();
+///
+/// assert_eq!(first, &copy);
+/// ```
+/// This example shows how one can get the same entry by using a defid.
+/// Do note that this is a bad example with a ton of unwraps used only for the purpose of showing
+/// off the function.
+///
+/// In a real world application. You could use the defid to store entries with just an id number
+/// and then later on fetch them when needed.
+///
+/// ## Errors
+/// The error type of the result is UrbanError. Which is an enum of three types.
+/// * ReqwestError
+/// * SerdeError
+/// * UnknownJsonError
+///
+/// ### ReqwestError
+/// This error occurs when reqwest fails to fetch from the Urban API.
+///
+/// ### SerdeError
+/// This error occurs when the json received is invalid.
+///
+/// ### UnknownJsonError
+/// This error occurs when the json received is valid but does not have the expected structure.
+///
+/// ### Empty result
+/// There is a fourth case. In which there are no entries in Urban Dictionary for the looked up
+/// word. In which case the Vector returned will be empty.
 pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Option<Definition>, UrbanError> {
     let response: serde_json::Value = client.get(&format!("https://api.urbandictionary.com/v0/define?defid={}", defid.0))
         .send()
@@ -341,20 +382,20 @@ pub async fn fetch_by_defid(client: &reqwest::Client, defid: Defid) -> Result<Op
 ///
 /// // The function is async. Thus it needs an executor to be ran from inside a non-async
 /// // function.
-/// if let Ok(result) = Runtime::new()
+/// if let Ok(random_defs) = Runtime::new()
 ///     .expect("Failed to create tokio runtime")
 ///     .block_on(urban_rs::fetch_random(&client))
 /// {
 ///
-///     // the result is a vector of definitions. If it has no length then there were no words
+///     // the random_defs is a vector of definitions. If it has no length then there were no words
 ///     // found
-///     if result.is_empty() {
+///     if random_defs.is_empty() {
 ///         println!("No words were found");
 ///         return;
 ///     }
 ///
-///     let first_result = &result[0];
-///     println!("Definition of the day: {}!\n{}", first_result.word(), first_result.definition());
+///     let first_random = &random_defs[0];
+///     println!("Word of the day: {}!\n{}", first_random.word(), first_random.definition());
 ///
 /// } else {
 ///     println!("An error has occured while fetching the definition");
